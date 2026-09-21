@@ -7,55 +7,58 @@ import (
 	"net/http"
 	"runtime"
 	"time"
+
+	// 引入你自己仓库的 config 包 (请将你的 GitHub 用户名替换进去)
+	"github.com/hgtre243-lgtm/CloudGate/internal/config"
 )
 
-// ServerInfo 定义服务状态信息的结构体（对应 Java 的 POJO / Entity）
-// 后面的 `json:"..."` 叫做 Struct Tag（结构体标签），决定序列化为 JSON 时的字段名
-type ServerInfo struct {
-	Name       string `json:"name"`
-	Version    string `json:"version"`
-	Status     string `json:"status"`
-	GoVersion  string `json:"go_version"`
-	Goroutines int    `json:"num_goroutines"`
-	ServerTime string `json:"sever_time"`
-}
+// 全局配置实例指针
+var globalConfig *config.GatewayConfig
 
-// pingHandler 处理探活请求
 func pingHandler(w http.ResponseWriter, r *http.Request) {
-	// 设置响应头为 JSON 格式
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	// 收集系统运行时数据
-	info := ServerInfo{
-		Name:       "CloudGate Core",
-		Version:    "v0.0.1-alpha",
-		Status:     "Up",
-		GoVersion:  runtime.Version(),
-		Goroutines: runtime.NumGoroutine(),
-		ServerTime: time.Now().Format("2006-101-02 15:04:05"),
+	// 将当前全局配置和运行时状态一并输出
+	data := map[string]any{
+		"name":           "CloudGate Core",
+		"version":        "v0.0.2-alpha",
+		"status":         "UP",
+		"go_version":     runtime.Version(),
+		"num_goroutines": runtime.NumGoroutine(),
+		"server_time":    time.Now().Format("2006-01-02 15:04:05"),
+		"current_config": globalConfig, // 直接返回当前运行的配置结构体
 	}
 
-	// 将结构体序列化为 JSON 并写入响应流
-	if err := json.NewEncoder(w).Encode(info); err != nil {
-		http.Error(w, "Internet Server Error", http.StatusInternalServerError)
-	}
+	_ = json.NewEncoder(w).Encode(data)
 }
-func main() {
-	port := ":9000"
 
-	// 注册路由：当请求 /ping 时由 pingHandler 函数处理
+func main() {
+	// 1. 初始化默认配置（返回指针）
+	globalConfig = config.NewDefaultConfig()
+	fmt.Printf("1. 初始全局配置指针地址: %p, 初始端口: %d\n", globalConfig, globalConfig.Server.Port)
+
+	// 2. 尝试使用【值接收者】修改端口
+	fmt.Println("\n--- 试验 A: 值接收者修改 ---")
+	globalConfig.UpdatePortByValue(9001)
+	fmt.Printf("执行 UpdatePortByValue 后，外部全局端口为: %d (根本没有变!)\n", globalConfig.Server.Port)
+
+	// 3. 尝试使用【指针接收者】修改端口
+	fmt.Println("\n--- 试验 B: 指针接收者修改 ---")
+	globalConfig.UpdatePortByPointer(9002)
+	fmt.Printf("执行 UpdatePortByPointer 后，外部全局端口为: %d (成功被原地修改!)\n\n", globalConfig.Server.Port)
+
+	// 将端口格式化
+	addr := fmt.Sprintf(":%d", globalConfig.Server.Port)
+
 	http.HandleFunc("/ping", pingHandler)
 
-	fmt.Printf("============================================")
-	fmt.Printf("🚀 CloudGate 核心服务正在启动...\n")
-	fmt.Printf("📡 监听端口: %s\n", port)
-	fmt.Printf("👉 探活测试接口: http://localhost%s/ping\n", port)
+	fmt.Printf("============================================\n")
+	fmt.Printf("🚀 CloudGate 启动成功，监听端口: %s\n", addr)
+	fmt.Printf("👉 测试地址: http://localhost%s/ping\n", addr)
 	fmt.Printf("============================================\n")
 
-	// 启动 HTTP 服务并监听端口（若端口被占用会返回错误）
-	if err := http.ListenAndServe(port, nil); err != nil {
+	if err := http.ListenAndServe(addr, nil); err != nil {
 		log.Fatalf("服务启动失败: %v", err)
 	}
-
 }
